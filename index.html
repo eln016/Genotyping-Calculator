@@ -60,6 +60,12 @@ h2{font-size:16px;margin:12px 0 2px}
 <button class="p" id="add">+ Add another gene</button>
 <p class="note">Band notes are copied as written from the lab protocol. Always double-check against the original.</p>
 </section><section id="cages" hidden>
+<details class="card" id="setup"><summary><b>Shared Google Sheet</b> <span class="note" id="sst"></span></summary>
+<div class="row" style="margin-top:10px"><label>Web app URL<input id="sUrl" style="width:280px"></label>
+<label>Lab passcode<input id="sPw" type="password" style="width:120px"></label>
+<label>Your initials<input id="sNm" style="width:80px"></label>
+<button class="p" id="sSave">Connect</button><button id="sNow">Sync now</button></div>
+<p class="note">Once connected, every change is written to the sheet and everyone sees who is working on which cage. Press Sync now (or reopen this tab) to see other people\u2019s updates.</p></details>
 <div class="card"><div class="row">
 <label>Cage #<input id="cId" style="width:90px"></label>
 <label>Gene 1<input id="c1" list="gl"></label><label>Gene 2<input id="c2" list="gl"></label><label>Gene 3<input id="c3" list="gl"></label>
@@ -152,7 +158,8 @@ const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&g
 const MINUS="\u2212",RES2=["+",MINUS],RES3=["WT","Het","Hz/KO"];
 const THREE=new Set(["Camkk2","Ah1","y2","LKB1","AMPK1","AMPK2","Fhod3","Prkag-HA"]);
 const resFor=g=>THREE.has(g)?RES3:RES2;
-const calcName=g=>names.find(k=>k.split(" ")[0].toLowerCase()===String(g).toLowerCase());
+const ALIAS={"math1-cre":"math1"};
+const calcName=g=>{const t=ALIAS[String(g).toLowerCase()]||String(g).toLowerCase();return names.find(k=>k.split(" ")[0].toLowerCase()===t)};
 const ST=["Not yet started","In Progress","Completed"],KEY="pcrCages";
 let cages=[];try{cages=JSON.parse(localStorage.getItem(KEY)||"[]")}catch(e){}
 const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(cages))}catch(e){}};
@@ -167,7 +174,7 @@ function render(){
     <label>Females<input type="number" min="0" data-i="${i}" data-f="f" value="${c.f}"></label>
     <label class="chk"><input type="checkbox" data-i="${i}" data-f="plan"${c.plan?" checked":""}>Plan</label>
     <button class="x" data-del="${i}">Remove</button></div>
-    ${c.mice.length?`<div class="wrap"><table><tr><th>Mouse</th>${c.genes.map(g=>`<th>${esc(g)}</th>`).join("")}</tr>
+    ${c.mice.length?`<div class="wrap"><table><tr><th>Mouse</th>${c.genes.map(g=>`<th title="${esc((G[calcName(g)]||{}).bands||"")}">${esc(g)}</th>`).join("")}</tr>
     ${c.mice.map((m,k)=>`<tr><td>${m.s}${m.n}</td>${c.genes.map(g=>`<td><select data-i="${i}" data-k="${k}" data-g="${esc(g)}"><option value="">\u2013</option>${resFor(g).map(o=>`<option${m.r[g]===o?" selected":""}>${o}</option>`).join("")}</select></td>`).join("")}</tr>`).join("")}
     </table></div>`:`<div class="note">Enter how many males and females are in this cage to get a result row for each mouse.</div>`}</div>`).join(""):`<div class="card note">No cages yet. Add one above or import your sheet.</div>`;
   plan();
@@ -176,7 +183,7 @@ function plan(){
   const sel=cages.filter(c=>c.plan),p=$("plan");
   if(!sel.length){p.innerHTML=`<h2>Pre-defrost planner</h2><div class="note">Tick \u201cPlan\u201d on the cages you\u2019re about to genotype to get total mouse counts and master mix volumes for all genes at once.</div>`;return}
   const ex=Math.max(0,parseInt($("extra").value)||0),tot={};let M=0,F=0;
-  sel.forEach(c=>{M+=c.m;F+=c.f;c.genes.forEach(g=>tot[g]=(tot[g]||0)+c.m+c.f)});
+  sel.forEach(c=>{M+=c.m;F+=c.f;c.genes.forEach(g=>{const k=calcName(g),t=k?k.split(" ")[0]:g;tot[t]=(tot[t]||0)+c.m+c.f})});
   const gs=Object.keys(tot),N=g=>tot[g]+ex;
   const row=(lab,fn,cls)=>`<tr><td>${lab}</td>${gs.map(g=>{const k=calcName(g);return `<td class="n ${cls||""}">${k&&tot[g]>0?fn(G[k],g):"\u2014"}</td>`}).join("")}</tr>`;
   const miss=gs.filter(g=>!calcName(g));
@@ -198,12 +205,12 @@ function plan(){
 $("cl").onchange=e=>{const t=e.target,i=t.dataset.i;if(i===undefined)return;const c=cages[i];
   if(t.dataset.g)c.mice[t.dataset.k].r[t.dataset.g]=t.value;
   else{const f=t.dataset.f;if(f==="m"||f==="f"){c[f]=Math.max(0,parseInt(t.value)||0);sync(c)}else if(f==="plan")c.plan=t.checked;else c[f]=t.value}
-  save();render()};
-$("cl").onclick=e=>{const d=e.target.dataset.del;if(d!==undefined&&confirm("Remove this cage and its results?")){cages.splice(d,1);save();render()}};
+  save();if(t.dataset.f!=="plan")push(c);render()};
+$("cl").onclick=e=>{const d=e.target.dataset.del;if(d!==undefined&&confirm("Remove this cage and its results?")){const gone=cages.splice(d,1)[0];save();api({action:"delete",id:gone.id});render()}};
 $("cAdd").onclick=()=>{const id=$("cId").value.trim();
   if(!id)return alert("Enter a cage number.");if(cages.some(c=>c.id===id))return alert("That cage is already listed.");
   const genes=["c1","c2","c3"].map(k=>$(k).value.trim()).filter(Boolean).map(v=>{const k=calcName(v);return k?k.split(" ")[0]:v});
-  cages.push({id,genes,gt:$("cGt").value.trim(),status:"Not yet started",m:0,f:0,plan:false,mice:[]});
+  const nc={id,genes,gt:$("cGt").value.trim()||cfg.name||"",status:"Not yet started",m:0,f:0,plan:false,mice:[]};cages.push(nc);push(nc);
   ["cId","c1","c2","c3","cGt"].forEach(k=>$(k).value="");save();render()};
 function parseCSV(t){const R=[];let r=[],q=false,v="";for(let i=0;i<t.length;i++){const ch=t[i];
   if(q){if(ch=='"'){if(t[i+1]=='"'){v+='"';i++}else q=false}else v+=ch}
@@ -213,8 +220,8 @@ function parseCSV(t){const R=[];let r=[],q=false,v="";for(let i=0;i<t.length;i++
 $("imp").onchange=async e=>{const f=e.target.files[0];if(!f)return;
   const rows=parseCSV(await f.text()),h=rows.findIndex(r=>(r[0]||"").trim()==="Cage Number");let n=0;
   rows.slice(h+1).forEach(r=>{const id=(r[0]||"").trim();if(!id||cages.some(c=>c.id===id))return;
-    cages.push({id,genes:[2,3,4].map(j=>(r[j]||"").trim()).filter(Boolean),gt:(r[5]||"").trim(),status:"Not yet started",m:0,f:0,plan:false,mice:[]});n++});
-  save();render();alert(n+" cages imported. Status colors don\u2019t come through in a CSV, so set those here.");e.target.value=""};
+    cages.push({id,genes:[2,3,4].map(j=>(r[j]||"").trim()).filter(Boolean),gt:(r[5]||"").trim(),status:"Not yet started",m:0,f:0,plan:false,mice:[],d:1});n++});
+  save();cages.filter(c=>c.d).forEach(c=>{delete c.d;push(c)});render();alert(n+" cages imported. Status colors don\u2019t come through in a CSV, so set those here.");e.target.value=""};
 function dlFile(name,txt,type){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([txt],{type}));a.download=name;a.click()}
 $("exp").onclick=()=>{const GN=[...new Set(cages.flatMap(c=>c.genes))],q=s=>'"'+String(s??"").replace(/"/g,'""')+'"';
   const out=[["Cage","Genotyper","Status","Mouse","Sex",...GN].map(q).join(",")];
@@ -225,8 +232,30 @@ $("rest").onchange=async e=>{const f=e.target.files[0];if(!f)return;
   try{const d=JSON.parse(await f.text());if(Array.isArray(d)&&confirm("Replace the cages in this browser with the backup?")){cages=d;save();render()}}catch(x){alert("That file isn\u2019t a valid backup.")}e.target.value=""};
 const tC=$("tC"),tK=$("tK");
 tC.onclick=()=>{$("calc").hidden=false;$("cages").hidden=true;tC.classList.add("on");tK.classList.remove("on")};
-tK.onclick=()=>{$("calc").hidden=true;$("cages").hidden=false;tK.classList.add("on");tC.classList.remove("on");render()};
+tK.onclick=()=>{$("calc").hidden=true;$("cages").hidden=false;tK.classList.add("on");tC.classList.remove("on");render();if(cfg.url)pull()};
 render();
+
+let cfg={};try{cfg=JSON.parse(localStorage.getItem("pcrCfg")||"{}")}catch(e){}
+const stat=t=>{$("sst").textContent=t};
+async function api(body){if(!cfg.url)return;stat("Saving to sheet\u2026");
+  try{const r=await fetch(cfg.url,{method:"POST",body:JSON.stringify({...body,pass:cfg.pass})});const j=await r.json();
+    if(j.error)throw new Error(j.error);stat("Saved to sheet \u2713 "+new Date().toLocaleTimeString())}
+  catch(e){stat("Couldn\u2019t save to the sheet ("+e.message+"). Your change is still kept in this browser.")}}
+const timers={};
+function push(c){if(!cfg.url)return;clearTimeout(timers[c.id]);timers[c.id]=setTimeout(()=>api({action:"save",cage:c}),700)}
+async function pull(){if(!cfg.url)return stat("Not connected. Saving in this browser only.");stat("Loading from sheet\u2026");
+  try{const r=await fetch(cfg.url+"?pass="+encodeURIComponent(cfg.pass||""));const j=await r.json();if(j.error)throw new Error(j.error);
+    const keep=Object.fromEntries(cages.map(c=>[c.id,c.plan]));
+    cages=j.cages.map(c=>{c.plan=!!keep[c.id];c.mice=c.mice||[];sync(c);return c});save();render();
+    stat("Loaded "+cages.length+" cages \u2713 "+new Date().toLocaleTimeString())}
+  catch(e){stat("Couldn\u2019t load from the sheet ("+e.message+").")}}
+$("sSave").onclick=async()=>{cfg={url:$("sUrl").value.trim(),pass:$("sPw").value,name:$("sNm").value.trim()};
+  try{localStorage.setItem("pcrCfg",JSON.stringify(cfg))}catch(e){}
+  if(cfg.url&&cages.length&&confirm("Upload the "+cages.length+" cages already in this browser to the shared sheet?\n\nOK = upload them. Cancel = just load what is in the sheet."))for(const c of cages)await api({action:"save",cage:c});
+  pull()};
+$("sNow").onclick=pull;
+$("sUrl").value=cfg.url||"";$("sPw").value=cfg.pass||"";$("sNm").value=cfg.name||"";
+stat(cfg.url?"Connected":"Not connected. Saving in this browser only.");
 </script>
 </body>
 </html>
