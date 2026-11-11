@@ -1,1 +1,1 @@
-# Genotyping-Calculator
+# Friedman-Genotyping-Calculator
